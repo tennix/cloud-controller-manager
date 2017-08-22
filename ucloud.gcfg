@@ -1,0 +1,9 @@
+[global]
+api-url = "http://api.ucloud.cn"
+public-key = "YOUR_PUBLIC_KEY"
+private-key = "YOUR_PRIVATE_KEY"
+region = "YOUR_REGION"
+zone = "YOUR_ZONE"
+project-id = "YOUR_PROJECT_ID"
+ssh-user = "root"
+ssh-key-file = "/root/.ssh/id_rsa"

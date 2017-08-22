@@ -20,11 +20,8 @@ import (
 	"github.com/golang/glog"
 )
 
-// TODO gcfg
 const (
-	sshPemKey string = "/root/.ssh/id_rsa"
-	sshUser   string = "root"
-	sshPort   int64  = 22
+	sshPort int64 = 22
 )
 
 var (
@@ -727,7 +724,7 @@ func (c UClient) DeleteInternalULB(p DeleteULBParam, hostIPs []string, ulbIP str
 	}
 	for _, hostIP := range hostIPs {
 		if err := ifdownULB4(sshConfig, hostIP, ulbIP); err != nil {
-			glog.V(3).Infof("failed to delete virtual network interface for %s: %v", hostIP, err)
+			glog.Errorf("failed to delete virtual network interface for %s: %v", hostIP, err)
 		}
 	}
 	return r, err

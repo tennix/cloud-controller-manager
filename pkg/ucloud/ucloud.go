@@ -2,6 +2,7 @@ package ucloud
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -17,7 +18,6 @@ import (
 
 const (
 	providerName = "ucloud"
-	operatorName = "Bgp"
 )
 
 var (
@@ -112,7 +112,7 @@ func (c *Cloud) NodeAddresses(nodeName types.NodeName) ([]v1.NodeAddress, error)
 	}
 	uhostID, err := c.InstanceID(nodeName)
 	if err != nil {
-		glog.V(3).Infof("failed to get instance id for %s: %v", nodeName, err)
+		glog.Errorf("failed to get instance id for %s: %v", nodeName, err)
 		return addrs, nil
 	}
 	p := GetUHostInstanceParam{
@@ -122,11 +122,11 @@ func (c *Cloud) NodeAddresses(nodeName types.NodeName) ([]v1.NodeAddress, error)
 	}
 	r, err := c.UClient.GetUHostInstance(p)
 	if err != nil {
-		glog.V(3).Infof("failed to GetUHostInstance: %v", err)
+		glog.Errorf("failed to GetUHostInstance: %v", err)
 		return addrs, nil
 	}
 	if r.RetCode != 0 {
-		glog.V(3).Infof("failed to GetUHostInstance: %s", r.Message)
+		glog.Errorf("failed to GetUHostInstance: %s", r.Message)
 		return addrs, nil
 	}
 	for _, ip := range r.UHostSet[0].IPSet {
@@ -145,7 +145,7 @@ func (c *Cloud) ExternalID(nodeName types.NodeName) (string, error) {
 	ip := strings.Replace(string(nodeName), "-", ".", -1)
 	ids, err := c.getUHostIDs([]string{ip})
 	if err != nil {
-		glog.V(3).Infof("failed to get uhost id for host %s: %v", ip, err)
+		glog.Errorf("failed to get uhost id for host %s: %v", ip, err)
 		return "", err
 	}
 	if len(ids) == 0 {
@@ -160,7 +160,7 @@ func (c *Cloud) InstanceID(nodeName types.NodeName) (string, error) {
 	ip := strings.Replace(string(nodeName), "-", ".", -1)
 	ids, err := c.getUHostIDs([]string{ip})
 	if err != nil {
-		glog.V(3).Infof("failed to get uhost id for host %s: %v", ip, err)
+		glog.Errorf("failed to get uhost id for host %s: %v", ip, err)
 		return "", err
 	}
 	if len(ids) == 0 {
@@ -179,11 +179,11 @@ func (c *Cloud) InstanceType(nodeName types.NodeName) (string, error) {
 	}
 	r, err := c.UClient.DescribeUHostInstance(p)
 	if err != nil {
-		glog.V(3).Infof("failed to DescribeUHostInstance: %v", err)
+		glog.Errorf("failed to DescribeUHostInstance: %v", err)
 		return "", err
 	}
 	if r.RetCode != 0 {
-		glog.V(3).Infof("failed to DescribeUHostInstance: %v", r.Message)
+		glog.Errorf("failed to DescribeUHostInstance: %v", r.Message)
 		return "", errors.New(r.Message)
 	}
 	hostIP := strings.Replace(string(nodeName), "-", ".", -1)
@@ -224,10 +224,11 @@ func (c *Cloud) describeLoadBalancer(name string) (*ULBSet, error) {
 		Limit:     100,
 	}
 	resp, err := c.UClient.DescribeULB(p)
-	glog.V(3).Infof("describe ULB response: %+v", resp)
 	if err != nil {
+		glog.Errorf("failed to describe ULB in region %s of project %s", c.Region, c.ProjectID)
 		return nil, err
 	}
+	glog.V(3).Infof("describe ULB response: %+v", resp)
 	if resp.RetCode != 0 {
 		return nil, ULBNotFound
 	}
@@ -249,43 +250,14 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 		InnerMode: "Yes",
 	}
 	r1, err := c.UClient.CreateULB(p1)
-	glog.V(3).Infof("create ULB response: %+v", r1)
 	if err != nil {
+		glog.Errorf("failed to create ULB with param %+v: %v", p1, err)
 		return "", err
 	}
+	glog.V(3).Infof("create ULB response: %+v", r1)
 	if r1.RetCode != 0 {
 		return "", errors.New(r1.Message)
 	}
-
-	// p2 := AllocateEIPParam{
-	// 	Region:       c.Region,
-	// 	OperatorName: operatorName,
-	// 	Bandwidth:    2,
-	// 	Quantity:     1,
-	// }
-	// r2, err := c.UClient.AllocateEIP(p2)
-	// if err != nil {
-	// 	return eip, err
-	// }
-	// glog.V(3).Infof("allocate EIP response: %+v", r2)
-	// if r2.RetCode != 0 {
-	// 	return eip, errors.New(r2.Message)
-	// }
-
-	// p3 := BindEIPParam{
-	// 	Region:       c.Region,
-	// 	EIPID:        r2.EIPSet[0].EIPID,
-	// 	ResourceType: "ulb",
-	// 	ResourceID:   r1.ULBID,
-	// }
-	// r3, err := c.UClient.BindEIP(p3)
-	// if err != nil {
-	// 	return eip, err
-	// }
-	// glog.V(3).Infof("bind EIP response: %+v", r3)
-	// if r3.RetCode != 0 {
-	// 	return eip, errors.New(r3.Message)
-	// }
 
 	p4 := CreateVServerParam{
 		Region:        c.Region,
@@ -299,6 +271,7 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 	}
 	r4, err := c.UClient.CreateVServer(p4)
 	if err != nil {
+		glog.Errorf("failed to create VServer with param %+v: %v", p4, err)
 		return "", err
 	}
 	glog.V(3).Infof("create vserver response: %+v", r4)
@@ -319,6 +292,7 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 		}
 		r5, err := c.UClient.AllocateULB4Backend(p5, c.SSHConfig)
 		if err != nil {
+			glog.Errorf("failed to allocate ULB for backend with param %+v: %v", p5, err)
 			return "", err
 		}
 		if r5.RetCode != 0 {
@@ -332,7 +306,11 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 func (c *Cloud) deleteLoadBalancer(name string) error {
 	ulbSet, err := c.describeLoadBalancer(name)
 	if err != nil && err == ULBNotFound {
+		glog.Errorf("failed to describe loadbalancer %s: %v", name, err)
 		return nil
+	}
+	if len(ulbSet.VServerSet) == 0 {
+		return errors.New("empty VServerSet for ULBSet")
 	}
 	ulbIP := ulbSet.PrivateIP
 	hostIPs := []string{}
@@ -346,10 +324,12 @@ func (c *Cloud) deleteLoadBalancer(name string) error {
 	}
 	r, err := c.UClient.DeleteInternalULB(p, hostIPs, ulbIP)
 	if err != nil {
-		glog.Error(err)
+		glog.Errorf("failed to delete internal ULB: %v", err)
+		return err
 	}
 	if r.RetCode != 0 {
-		glog.Error(r.Message)
+		glog.Errorf("failed to delete internal ULB: %v", r.Message)
+		return err
 	}
 	return nil
 }
@@ -361,6 +341,7 @@ func (c *Cloud) GetLoadBalancer(clusterName string, service *v1.Service) (status
 	glog.V(3).Infof("get loadbalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
 	if err != nil {
+		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
 		return nil, false, err
 	}
 	status, err = toLBStatus(ulbSet)
@@ -385,16 +366,13 @@ func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, node
 	glog.V(3).Infof("loadBalancer name: %s", loadBalancerName)
 	_, err := c.describeLoadBalancer(loadBalancerName)
 	if err != nil && err != ULBNotFound {
+		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
 		return nil, err
 	}
 	if len(service.Spec.Ports) == 0 {
 		return nil, errors.New("no port found for service")
 	}
 	backendPort := int(service.Spec.Ports[0].NodePort)
-	// frontendPort := int(service.Spec.Ports[0].Port)
-	// if service.Spec.Ports[0].TargetPort.Type == intstr.Int {
-	// 	frontendPort = int(service.Spec.Ports[0].TargetPort.IntVal)
-	// }
 	nodeIPs := []string{}
 	for _, node := range nodes {
 		for _, addr := range node.Status.Addresses {
@@ -406,10 +384,12 @@ func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, node
 	}
 	uHostIDs, err := c.getUHostIDs(nodeIPs)
 	if err != nil {
+		glog.Errorf("failed to get UHost IDs from node IPs %v: %v", nodeIPs, err)
 		return nil, err
 	}
 	ulbID, err := c.createLoadBalancer(loadBalancerName, uHostIDs, backendPort)
 	if err != nil {
+		glog.Errorf("failed to create loadbalancer(%s) for UHost(%v): %v", loadBalancerName, uHostIDs, err)
 		return nil, err
 	}
 	p := DescribeULBParam{
@@ -419,12 +399,15 @@ func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, node
 	}
 	r, err := c.UClient.DescribeULB(p)
 	if err != nil {
-		glog.V(3).Infof("failed to DescribeULB for %s: %v", ulbID, err)
+		glog.Errorf("failed to DescribeULB for %s: %v", ulbID, err)
 		return nil, err
 	}
 	if r.RetCode != 0 {
-		glog.V(3).Infof("failed to DescribeULB for %s: %v", ulbID, err)
+		glog.Errorf("failed to DescribeULB for %s: %v", ulbID, err)
 		return nil, errors.New(r.Message)
+	}
+	if len(r.DataSet) == 0 {
+		return nil, errors.New("no IP found for load balancer")
 	}
 	status := &v1.LoadBalancerStatus{
 		Ingress: []v1.LoadBalancerIngress{
@@ -443,11 +426,11 @@ func (c *Cloud) getUHostIDs(nodeIPs []string) ([]string, error) {
 	}
 	r, err := c.UClient.DescribeUHostInstance(p)
 	if err != nil {
-		glog.V(3).Infof("failed to describe uhost instance: %v", err)
+		glog.Errorf("failed to describe uhost instance: %v", err)
 		return instanceIDs, err
 	}
 	if r.RetCode != 0 {
-		glog.V(3).Infof("failed to describe uhost instance: %v", r.Message)
+		glog.Errorf("failed to describe uhost instance: %v", r.Message)
 		return instanceIDs, errors.New(r.Message)
 	}
 	ips := make(map[string]bool)
@@ -474,10 +457,11 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 	glog.V(3).Infof("update loadbalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
 	if err != nil {
+		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
 		return err
 	}
 	if len(service.Spec.Ports) == 0 {
-		return errors.New("no port found for serivce")
+		return fmt.Errorf("no port found for serivce %s/%s", service.Namespace, service.Name)
 	}
 	port := int(service.Spec.Ports[0].Port)
 	nodeNames := []string{}
@@ -486,6 +470,7 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 	}
 	uHostIDs, err := c.getUHostIDs(nodeNames)
 	if err != nil {
+		glog.Errorf("failed to get UHost IDs from node names(%v): %v", nodeNames, err)
 		return err
 	}
 	ulbID := ulbSet.ULBID
@@ -510,10 +495,12 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 			}
 			r, err := c.UClient.ReleaseBackend(p)
 			if err != nil {
+				glog.Errorf("failed to release backend with parameter %+v: %v", p, err)
 				return err
 			}
 			glog.V(3).Infof("update loadbalancer(release backend) response: %+v", r)
 			if r.RetCode != 0 {
+				glog.Errorf("failed to release backend with parameter %+v: %v", p, r.Message)
 				return errors.New(r.Message)
 			}
 		}
@@ -533,10 +520,12 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 			}
 			r, err := c.UClient.AllocateULB4Backend(p, c.SSHConfig)
 			if err != nil {
+				glog.Errorf("failed to allocate ULB for backend with parameter %+v: %v", p, err)
 				return err
 			}
 			glog.V(3).Infof("update loadbalancer(allocate backend) response: %+v", r)
 			if r.RetCode != 0 {
+				glog.Errorf("failed to allocate ULB for backend with parameter %+v: %v", p, r.Message)
 				return errors.New(r.Message)
 			}
 		}
@@ -550,7 +539,11 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 func (c *Cloud) EnsureLoadBalancerDeleted(clusterName string, service *v1.Service) error {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("loadbalancer name: %s", loadBalancerName)
-	return c.deleteLoadBalancer(loadBalancerName)
+	if err := c.deleteLoadBalancer(loadBalancerName); err != nil {
+		glog.Errorf("failed to delete loadbalancer %s: %v", loadBalancerName, err)
+		return err
+	}
+	return nil
 }
 
 func newUCloud(config io.Reader) (*Cloud, error) {
@@ -560,10 +553,12 @@ func newUCloud(config io.Reader) (*Cloud, error) {
 	)
 	err = gcfg.ReadInto(&cfg, config)
 	if err != nil {
+		glog.Errorf("failed to read config: %v", err)
 		return nil, err
 	}
 	sshConfig, err := NewSSHConfig(cfg.Global.SSHUser, cfg.Global.SSHKeyFile)
 	if err != nil {
+		glog.Errorf("failed to get SSH config from %s: %v", cfg.Global.SSHKeyFile, err)
 		return nil, err
 	}
 	cloud := &Cloud{
@@ -577,7 +572,7 @@ func newUCloud(config io.Reader) (*Cloud, error) {
 		PublicKey:  cfg.Global.PublicKey,
 		BaseURL:    cfg.Global.ApiURL,
 	}
-	glog.V(3).Infof("ucloud: %+v", cloud)
+	glog.V(3).Infof("ucloud config: %+v", cloud)
 	return cloud, nil
 }
 
