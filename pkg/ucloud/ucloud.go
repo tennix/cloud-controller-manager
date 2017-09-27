@@ -267,7 +267,7 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 		Protocol:      "TCP",
 		FrontendPort:  port,
 		ListenType:    "PacketsTransmit", // RequestProxy | PacketsTransmit
-		ClientTimeout: 60,
+		ClientTimeout: 0,
 	}
 	r4, err := c.UClient.CreateVServer(p4)
 	if err != nil {
