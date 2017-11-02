@@ -18,6 +18,7 @@ import (
 
 const (
 	providerName = "ucloud"
+	maxLimit     = 10000000
 )
 
 var (
@@ -175,7 +176,7 @@ func (c *Cloud) InstanceType(nodeName types.NodeName) (string, error) {
 	p := DescribeUHostInstanceParam{
 		Region:    c.Region,
 		ProjectID: c.ProjectID,
-		Limit:     100,
+		Limit:     maxLimit,
 	}
 	r, err := c.UClient.DescribeUHostInstance(p)
 	if err != nil {
@@ -217,11 +218,12 @@ func (c *Cloud) CurrentNodeName(hostname string) (types.NodeName, error) {
 	return types.NodeName(hostname), nil
 }
 
+// UCloud API doesn't support get ULB by name
 func (c *Cloud) describeLoadBalancer(name string) (*ULBSet, error) {
 	p := DescribeULBParam{
 		Region:    c.Region,
 		ProjectID: c.ProjectID,
-		Limit:     100,
+		Limit:     maxLimit,
 	}
 	resp, err := c.UClient.DescribeULB(p)
 	if err != nil {
@@ -341,6 +343,9 @@ func (c *Cloud) GetLoadBalancer(clusterName string, service *v1.Service) (status
 	glog.V(3).Infof("get loadbalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
 	if err != nil {
+		if err == ULBNotFound {
+			return nil, false, nil
+		}
 		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
 		return nil, false, err
 	}
@@ -352,10 +357,10 @@ func (c *Cloud) GetLoadBalancer(clusterName string, service *v1.Service) (status
 }
 
 func toLBStatus(ulbSet *ULBSet) (*v1.LoadBalancerStatus, error) {
-	if len(ulbSet.IPSet) == 0 {
+	if ulbSet.PrivateIP == "" {
 		return nil, EIPNotFound
 	}
-	ing := v1.LoadBalancerIngress{IP: ulbSet.IPSet[0].EIP}
+	ing := v1.LoadBalancerIngress{IP: ulbSet.PrivateIP}
 	return &v1.LoadBalancerStatus{Ingress: []v1.LoadBalancerIngress{ing}}, nil
 }
 
@@ -364,11 +369,21 @@ func toLBStatus(ulbSet *ULBSet) (*v1.LoadBalancerStatus, error) {
 func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("loadBalancer name: %s", loadBalancerName)
-	_, err := c.describeLoadBalancer(loadBalancerName)
+	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
 	if err != nil && err != ULBNotFound {
 		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
 		return nil, err
 	}
+	if err == nil {
+		status, err := toLBStatus(ulbSet)
+		if err != nil {
+			glog.Errorf("failed to get load balancer status: %v", err)
+			return nil, err
+		}
+		return status, nil
+	}
+
+	// ULB not found, create one
 	if len(service.Spec.Ports) == 0 {
 		return nil, errors.New("no port found for service")
 	}
@@ -422,7 +437,7 @@ func (c *Cloud) getUHostIDs(nodeIPs []string) ([]string, error) {
 	p := DescribeUHostInstanceParam{
 		Region:    c.Region,
 		ProjectID: c.ProjectID,
-		Limit:     100,
+		Limit:     maxLimit,
 	}
 	r, err := c.UClient.DescribeUHostInstance(p)
 	if err != nil {
@@ -437,10 +452,9 @@ func (c *Cloud) getUHostIDs(nodeIPs []string) ([]string, error) {
 	for _, ip := range nodeIPs {
 		ips[ip] = true
 	}
-	glog.V(3).Infof("node IPs: %v", ips)
+	glog.V(3).Infof("node IPs: %v UHost: %v", ips, r.UHostSet)
 	for _, host := range r.UHostSet {
 		for _, ip := range host.IPSet {
-			glog.V(3).Infof("IPSet: %v", ip)
 			if _, ok := ips[ip.IP]; ok {
 				instanceIDs = append(instanceIDs, host.UHostID)
 			}
@@ -553,13 +567,11 @@ func newUCloud(config io.Reader) (*Cloud, error) {
 	)
 	err = gcfg.ReadInto(&cfg, config)
 	if err != nil {
-		glog.Errorf("failed to read config: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to read config: %v", err)
 	}
 	sshConfig, err := NewSSHConfig(cfg.Global.SSHUser, cfg.Global.SSHKeyFile)
 	if err != nil {
-		glog.Errorf("failed to get SSH config from %s: %v", cfg.Global.SSHKeyFile, err)
-		return nil, err
+		return nil, fmt.Errorf("failed to get SSH config from %s: %v", cfg.Global.SSHKeyFile, err)
 	}
 	cloud := &Cloud{
 		Region:    cfg.Global.Region,
@@ -572,7 +584,6 @@ func newUCloud(config io.Reader) (*Cloud, error) {
 		PublicKey:  cfg.Global.PublicKey,
 		BaseURL:    cfg.Global.ApiURL,
 	}
-	glog.V(3).Infof("ucloud config: %+v", cloud)
 	return cloud, nil
 }
 

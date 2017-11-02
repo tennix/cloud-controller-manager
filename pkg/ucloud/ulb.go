@@ -94,11 +94,11 @@ type DescribeUHostInstanceParam struct {
 	Signature  string `json:"Signature"`
 	ProjectID  string `json:"ProjectId"`
 	Region     string `json:"Region"` // required
-	Zone       string `json:"zone"`
+	Zone       string `json:"Zone"`
 	UHostIDsN  string `json:"UHostIds.n"`
-	Tag        string `json:"tag"`
-	Offset     int    `json:"offset"`
-	Limit      int    `json:"limit"`
+	Tag        string `json:"Tag"`
+	Offset     int    `json:"Offset"`
+	Limit      int    `json:"Limit"`
 }
 
 type GetUHostInstanceParam struct {
@@ -139,7 +139,7 @@ type UHostInstanceSet struct {
 	Tag                string         `json:"Tag"`
 	Remark             string         `json:"Remark"`
 	Name               string         `json:"Name"`
-	State              string         `json:"state"`
+	State              string         `json:"State"`
 	CreateTime         int            `json:"CreateTime"`
 	ChargeType         string         `json:"ChargeType"`
 	ExpireTime         int            `json:"ExpireTime"`
@@ -161,7 +161,7 @@ type UHostIPSet struct {
 	VpcID     string `json:"VPCId"`
 	SubentID  string `json:"SubnetId"`
 	Weight    int    `json:"Weight"`
-	Bandwidth int    `json:"bandwidth"`
+	Bandwidth int    `json:"Bandwidth"`
 }
 
 type UHostDiskSet struct {
@@ -533,7 +533,7 @@ type AllocateEIPParam struct {
 	Region           string `json:"Region"`
 	OperatorName     string `json:"OperatorName"`
 	Bandwidth        int    `json:"Bandwidth"`
-	Tag              string `json:"tag"`
+	Tag              string `json:"Tag"`
 	ChargeType       string `json:"ChargeType"`
 	Quantity         int    `json:"Quantity"`
 	PayMode          string `json:"PayMode"`
