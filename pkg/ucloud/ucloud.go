@@ -477,7 +477,7 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 	if len(service.Spec.Ports) == 0 {
 		return fmt.Errorf("no port found for serivce %s/%s", service.Namespace, service.Name)
 	}
-	port := int(service.Spec.Ports[0].Port)
+	port := int(service.Spec.Ports[0].NodePort)
 	nodeNames := []string{}
 	for _, node := range nodes {
 		nodeNames = append(nodeNames, node.Name)
@@ -497,6 +497,7 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 	for _, backend := range ulbSet.VServerSet[0].VServerSet {
 		m2[backend.ResourceID] = backend.BackendID
 	}
+	glog.V(3).Infof("m1: %v m2: %v", m1, m2)
 	// remove backend if not in m1, create backend if not in m1
 	for host, backendID := range m2 {
 		if _, ok := m1[host]; !ok {
