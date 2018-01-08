@@ -1028,7 +1028,7 @@ func ifdownULB4(sshConfig *ssh.ClientConfig, hostIP string, ulbIP string) error 
 		return err
 	}
 	defer session.Close()
-	cmd := fmt.Sprintf("rm -f /etc/sysconfig/network-scripts/ifcfg-log:%d; ifdown lo:%d", iplong, iplong)
+	cmd := fmt.Sprintf("ifdown lo:%d; rm -f /etc/sysconfig/network-scripts/ifcfg-lo:%d;", iplong, iplong)
 	glog.V(3).Infof("ifdownULB4: %s %s", hostIP, cmd)
 
 	var (
