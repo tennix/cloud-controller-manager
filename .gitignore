@@ -1,3 +1,4 @@
 .glide/
 bin/
 docker/bin
+tmp/

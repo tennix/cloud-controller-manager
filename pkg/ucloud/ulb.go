@@ -95,7 +95,7 @@ type DescribeUHostInstanceParam struct {
 	ProjectID  string `json:"ProjectId"`
 	Region     string `json:"Region"` // required
 	Zone       string `json:"Zone"`
-	UHostIDsN  string `json:"UHostIds.n"`
+	UHostIDs   string `json:"UHostIds"`
 	Tag        string `json:"Tag"`
 	Offset     int    `json:"Offset"`
 	Limit      int    `json:"Limit"`
@@ -181,6 +181,77 @@ func (p *DescribeUHostInstanceParam) setKey(pubKey, privKey string) {
 func (p DescribeUHostInstanceParam) QueryString() string {
 	params := toParams(p)
 	return params.toQueryString()
+}
+
+type DescribePHostParam struct {
+	Action     string `json:"Action"`
+	PublicKey  string `json:"PublicKey"`
+	PrivateKey string `json:"PrivateKey"`
+	Signature  string `json:"Signature"`
+	ProjectID  string `json:"ProjectId"`
+	Region     string `json:"Region"`
+	Zone       string `json:"Zone"`
+	PHostID    string `json:"PHostId"`
+	Offset     int    `json:"Offset"`
+	Limit      int    `json:"Limit"`
+}
+
+func (p *DescribePHostParam) setKey(pubKey, privKey string) {
+	p.Action = "DescribePHost"
+	p.PublicKey = pubKey
+	p.PrivateKey = privKey
+}
+
+func (p DescribePHostParam) QueryString() string {
+	params := toParams(p)
+	return params.toQueryString()
+}
+
+type DescribePHostResponse struct {
+	ReturnStatus
+	TotalCount int        `json:"TotalCount"`
+	PHostSet   []PHostSet `json:"PHostSet"`
+}
+
+type PHostSet struct {
+	PHostID    string         `json:"PHostId"`
+	Zone       string         `json:"Zone"`
+	SN         string         `json:"SN"`
+	PMStatus   string         `json:"PMStatus"`
+	Name       string         `json:"Name"`
+	Remark     string         `json:"Remark"`
+	Tag        string         `json:"Tag"`
+	ImageName  string         `json:"ImageName"`
+	OSName     string         `json:"OSname"`
+	CreateTime int            `json:"CreateTime"`
+	ExpireTime int            `json:"ExpireTime"`
+	ChargeType string         `json:"ChargeType"`
+	PowerState string         `json:"PowerState"`
+	PHostType  string         `json:"PHostType"`
+	Memory     int            `json:"Memory"`
+	CPUSet     PHostCPUSet    `json:"CPUSet"`
+	DiskSet    []PHostDiskSet `json:"DiskSet"`
+	IPSet      []PHostIPSet   `json:"IPSet"`
+}
+
+type PHostIPSet struct {
+	OperatorName string `json:"OperatorName"`
+	IPID         string `json:"IPId"`
+	IPAddr       string `json:"IPAddr"`
+	Bandwidth    int    `json:"Bandwidth"`
+}
+
+type PHostCPUSet struct {
+	Model     string  `json:"Model"`
+	Frequence float32 `json:"Frequence"`
+	Count     int     `json:"Count"`
+	CoreCount int     `json:"CoreCount"`
+}
+
+type PHostDiskSet struct {
+	Name  string `json:"Name"`
+	IOCap int    `json:"IOCap"`
+	Space int    `json:"Space"`
 }
 
 type DescribeULBParam struct {
@@ -787,52 +858,80 @@ func (c UClient) AllocateULB4Backend(p AllocateBackendParam, sshConfig *ssh.Clie
 		hostIP string
 		ulbIP  string
 	)
-	if p.ResourceType != "UHost" {
-		return nil, fmt.Errorf("AllocateULB4Backend not support ResourceType[%s]", p.ResourceType)
-	}
-	p1 := GetUHostInstanceParam{
+	// find ulb IP
+	p1 := DescribeULBParam{
 		Region:    p.Region,
 		ProjectID: p.ProjectID,
-		UHostID:   p.ResourceID,
+		ULBID:     p.ULBID,
 	}
-	r1, err := c.GetUHostInstance(p1)
-	glog.V(3).Infof("AllocateULB4Backend describe uhost response: %+v", r1)
+	r1, err := c.DescribeULB(p1)
+	glog.V(3).Infof("AllocateULB4Backend describe ULB response: %+v", r1)
 	if err != nil {
 		return nil, err
 	}
 	if r1.RetCode != 0 {
 		return nil, errors.New(r1.Message)
 	}
-	if len(r1.UHostSet) != 1 {
-		return nil, fmt.Errorf("AllocateULB4Backend uhost[%s] not found", p.ResourceID)
-	}
-
-	for _, ip := range r1.UHostSet[0].IPSet {
-		if ip.Type == "Private" {
-			hostIP = ip.IP
-			break
-		}
-	}
-
-	p2 := DescribeULBParam{
-		Region:    p.Region,
-		ProjectID: p.ProjectID,
-		ULBID:     p.ULBID,
-	}
-	r2, err := c.DescribeULB(p2)
-	glog.V(3).Infof("AllocateULB4Backend describe ULB response: %+v", r2)
-	if err != nil {
-		return nil, err
-	}
-	if r2.RetCode != 0 {
-		return nil, errors.New(r2.Message)
-	}
-	if len(r2.DataSet) != 1 {
+	if len(r1.DataSet) != 1 {
 		return nil, ULBNotFound
 	}
-	ulbIP = r2.DataSet[0].PrivateIP
+	ulbIP = r1.DataSet[0].PrivateIP
 	if ulbIP == "" {
 		return nil, errors.New("AllocateULB4Backend ulb has invalid private ip")
+	}
+
+	// find host IP
+	if strings.HasPrefix(p.ResourceID, "uhost") {
+		p2 := GetUHostInstanceParam{
+			Region:    p.Region,
+			ProjectID: p.ProjectID,
+			UHostID:   p.ResourceID,
+		}
+		r2, err := c.GetUHostInstance(p2)
+		glog.V(3).Infof("AllocateULB4Backend describe uhost response: %+v", r2)
+		if err != nil {
+			return nil, err
+		}
+		if r2.RetCode != 0 {
+			return nil, errors.New(r2.Message)
+		}
+		if len(r2.UHostSet) != 1 {
+			return nil, fmt.Errorf("AllocateULB4Backend uhost[%s] not found", p.ResourceID)
+		}
+		for _, ip := range r2.UHostSet[0].IPSet {
+			if ip.Type == "Private" {
+				hostIP = ip.IP
+				break
+			}
+		}
+		p.ResourceType = "UHost"
+	} else if strings.HasPrefix(p.ResourceID, "upm") {
+		p2 := DescribePHostParam{
+			Region:    p.Region,
+			ProjectID: p.ProjectID,
+			PHostID:   p.ResourceID,
+			Limit:     1,
+		}
+		r2, err := c.DescribePHost(p2)
+		glog.V(3).Infof("AllocateULB4Backend describe phost response: %+v", r2)
+		if err != nil {
+			return nil, err
+		}
+		if r2.RetCode != 0 {
+			return nil, errors.New(r2.Message)
+		}
+		if len(r2.PHostSet) != 1 {
+			return nil, fmt.Errorf("AllocateULB4Backend phost[%s] not found", p.ResourceID)
+		}
+		for _, ip := range r2.PHostSet[0].IPSet {
+			if ip.OperatorName == "Private" {
+				hostIP = ip.IPAddr
+				break
+			}
+		}
+		p.ResourceType = "UPHost"
+	} else {
+		return nil, fmt.Errorf("AllocateULB4Backend doesn't support host[%s]", p.ResourceID)
 	}
 
 	err = ifupULB4(sshConfig, hostIP, ulbIP)
@@ -918,6 +1017,22 @@ func (c UClient) ReleaseEIP(p ReleaseEIPParam) (*ReleaseEIPResponse, error) {
 	defer resp.Body.Close()
 	r := &ReleaseEIPResponse{}
 	err = json.NewDecoder(resp.Body).Decode(r)
+	return r, err
+}
+
+func (c UClient) DescribePHost(p DescribePHostParam) (*DescribePHostResponse, error) {
+	p.setKey(c.PublicKey, c.PrivateKey)
+	resp, err := http.Get(c.GetQueryURL(p))
+	glog.V(3).Infof("DescribePHost request url: %s", c.GetQueryURL(p))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	r := &DescribePHostResponse{}
+	err = json.NewDecoder(resp.Body).Decode(r)
+	if err != nil {
+		return nil, err
+	}
 	return r, err
 }
 

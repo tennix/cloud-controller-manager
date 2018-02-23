@@ -173,28 +173,53 @@ func (c *Cloud) InstanceID(nodeName types.NodeName) (string, error) {
 // InstanceType implements cloudprovider.Instances interface
 // It returns the type of the specified instance.
 func (c *Cloud) InstanceType(nodeName types.NodeName) (string, error) {
-	p := DescribeUHostInstanceParam{
+	// find instance in UHost
+	p1 := DescribeUHostInstanceParam{
 		Region:    c.Region,
 		ProjectID: c.ProjectID,
 		Limit:     maxLimit,
 	}
-	r, err := c.UClient.DescribeUHostInstance(p)
+	r1, err := c.UClient.DescribeUHostInstance(p1)
 	if err != nil {
 		glog.Errorf("failed to DescribeUHostInstance: %v", err)
 		return "", err
 	}
-	if r.RetCode != 0 {
-		glog.Errorf("failed to DescribeUHostInstance: %v", r.Message)
-		return "", errors.New(r.Message)
+	if r1.RetCode != 0 {
+		glog.Errorf("failed to DescribeUHostInstance: %v", r1.Message)
+		return "", errors.New(r1.Message)
 	}
 	hostIP := strings.Replace(string(nodeName), "-", ".", -1)
-	for _, host := range r.UHostSet {
+	for _, host := range r1.UHostSet {
 		for _, ip := range host.IPSet {
 			if ip.IP == hostIP {
 				return host.UHostType, nil
 			}
 		}
 	}
+
+	// find instance in PHost
+	p2 := DescribePHostParam{
+		Region:    c.Region,
+		ProjectID: c.ProjectID,
+		Limit:     maxLimit,
+	}
+	r2, err := c.UClient.DescribePHost(p2)
+	if err != nil {
+		glog.Errorf("failed to DescribePHost: %v", err)
+		return "", err
+	}
+	if r2.RetCode != 0 {
+		glog.Errorf("failed to DescribePhost: %v", r2.Message)
+		return "", errors.New(r2.Message)
+	}
+	for _, host := range r2.PHostSet {
+		for _, ip := range host.IPSet {
+			if ip.IPAddr == hostIP {
+				return host.PHostType, nil
+			}
+		}
+	}
+
 	return "", cloudprovider.InstanceNotFound
 }
 
@@ -283,14 +308,14 @@ func (c *Cloud) createLoadBalancer(name string, hostIDs []string, port int) (str
 
 	for _, host := range hostIDs {
 		p5 := AllocateBackendParam{
-			Region:       c.Region,
-			ProjectID:    c.ProjectID,
-			ULBID:        r1.ULBID,
-			VServerID:    r4.VServerID,
-			ResourceType: "UHost",
-			ResourceID:   host,
-			Port:         port,
-			Enabled:      1,
+			Region:    c.Region,
+			ProjectID: c.ProjectID,
+			ULBID:     r1.ULBID,
+			VServerID: r4.VServerID,
+			// ResourceType: "UHost", // ResourceType is handled in AllocateULB4Backend
+			ResourceID: host,
+			Port:       port,
+			Enabled:    1,
 		}
 		r5, err := c.UClient.AllocateULB4Backend(p5, c.SSHConfig)
 		if err != nil {
@@ -434,32 +459,57 @@ func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, node
 
 func (c *Cloud) getUHostIDs(nodeIPs []string) ([]string, error) {
 	var instanceIDs []string
-	p := DescribeUHostInstanceParam{
+	// list UHost
+	p1 := DescribeUHostInstanceParam{
 		Region:    c.Region,
 		ProjectID: c.ProjectID,
 		Limit:     maxLimit,
 	}
-	r, err := c.UClient.DescribeUHostInstance(p)
+	r1, err := c.UClient.DescribeUHostInstance(p1)
 	if err != nil {
 		glog.Errorf("failed to describe uhost instance: %v", err)
-		return instanceIDs, err
+		return nil, err
 	}
-	if r.RetCode != 0 {
-		glog.Errorf("failed to describe uhost instance: %v", r.Message)
-		return instanceIDs, errors.New(r.Message)
+	if r1.RetCode != 0 {
+		glog.Errorf("failed to describe uhost instance: %v", r1.Message)
+		return nil, errors.New(r1.Message)
 	}
 	ips := make(map[string]bool)
 	for _, ip := range nodeIPs {
 		ips[ip] = true
 	}
-	glog.V(3).Infof("node IPs: %v UHost: %v", ips, r.UHostSet)
-	for _, host := range r.UHostSet {
+	glog.V(3).Infof("node IPs: %v UHost: %v", ips, r1.UHostSet)
+	for _, host := range r1.UHostSet {
 		for _, ip := range host.IPSet {
 			if _, ok := ips[ip.IP]; ok {
 				instanceIDs = append(instanceIDs, host.UHostID)
 			}
 		}
 	}
+
+	// list PHost
+	p2 := DescribePHostParam{
+		Region:    c.Region,
+		ProjectID: c.ProjectID,
+		Limit:     maxLimit,
+	}
+	r2, err := c.UClient.DescribePHost(p2)
+	if err != nil {
+		glog.Errorf("failed to describe phost: %v", err)
+		return nil, err
+	}
+	if r2.RetCode != 0 {
+		glog.Errorf("failed to describe phost: %v", r2.Message)
+		return nil, errors.New(r1.Message)
+	}
+	for _, host := range r2.PHostSet {
+		for _, ip := range host.IPSet {
+			if _, ok := ips[ip.IPAddr]; ok {
+				instanceIDs = append(instanceIDs, host.PHostID)
+			}
+		}
+	}
+
 	glog.V(3).Infof("instanceIDs: %v", instanceIDs)
 	return instanceIDs, nil
 }
