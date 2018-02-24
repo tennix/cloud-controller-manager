@@ -929,7 +929,7 @@ func (c UClient) AllocateULB4Backend(p AllocateBackendParam, sshConfig *ssh.Clie
 				break
 			}
 		}
-		p.ResourceType = "UPHost"
+		p.ResourceType = "UPM"
 	} else {
 		return nil, fmt.Errorf("AllocateULB4Backend doesn't support host[%s]", p.ResourceID)
 	}
