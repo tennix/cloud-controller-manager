@@ -191,7 +191,7 @@ type DescribePHostParam struct {
 	ProjectID  string `json:"ProjectId"`
 	Region     string `json:"Region"`
 	Zone       string `json:"Zone"`
-	PHostID    string `json:"PHostId"`
+	PHostID_0  string `json:"PHostId.0"`
 	Offset     int    `json:"Offset"`
 	Limit      int    `json:"Limit"`
 }
@@ -909,7 +909,7 @@ func (c UClient) AllocateULB4Backend(p AllocateBackendParam, sshConfig *ssh.Clie
 		p2 := DescribePHostParam{
 			Region:    p.Region,
 			ProjectID: p.ProjectID,
-			PHostID:   p.ResourceID,
+			PHostID_0: p.ResourceID,
 			Limit:     1,
 		}
 		r2, err := c.DescribePHost(p2)
