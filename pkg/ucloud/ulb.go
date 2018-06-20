@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -1075,7 +1076,13 @@ func NewSSHConfig(user string, keyFile string) (*ssh.ClientConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ssh.ClientConfig{User: user, Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)}}, nil
+	return &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
+		},
+	}, nil
 }
 
 func ip2long(ipstr string) (uint32, error) {
