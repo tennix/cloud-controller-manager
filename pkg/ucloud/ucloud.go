@@ -1,17 +1,17 @@
 package ucloud
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
-
 	"github.com/golang/glog"
+	"golang.org/x/crypto/ssh"
 	gcfg "gopkg.in/gcfg.v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/api/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/controller"
 )
@@ -81,10 +81,15 @@ func (c *Cloud) ProviderName() string {
 	return providerName
 }
 
+// HasClusterID implements cloudprovider.Interface interface
+func (c *Cloud) HasClusterID() bool {
+	return false
+}
+
 // ScrubDNS implements cloudprovider.Interface interface
 // It provides an opportunity for cloud-provider-specific code to process DNS settings for pods.
 func (c *Cloud) ScrubDNS(nameservers, searches []string) (nsOut, srchOut []string) {
-	return nameservers, searches
+	return nil, nil
 }
 
 // Zones implements cloudprovider.Interface interface
@@ -95,23 +100,39 @@ func (c *Cloud) Zones() (cloudprovider.Zones, bool) {
 
 // GetZone implements cloudprovider.Zones interface
 // It returns the Zone containing the current failure zone and locality region and the program is running on
-func (c *Cloud) GetZone() (cloudprovider.Zone, error) {
+func (c *Cloud) GetZone(ctx context.Context) (cloudprovider.Zone, error) {
 	return cloudprovider.Zone{
 		FailureDomain: c.Zone,
 		Region:        c.Region,
 	}, nil
 }
 
-// NodeAddresses implements cloudprovider.Instances Interface
+// GetZoneByProviderID implements cloudprovider.Interface interface
+func (c *Cloud) GetZoneByProviderID(ctx context.Context, providerID string) (cloudprovider.Zone, error) {
+	return cloudprovider.Zone{
+		FailureDomain: c.Zone,
+		Region:        c.Region,
+	}, nil
+}
+
+// GetZoneByNodeName implements cloudprovider.Interface interface
+func (c *Cloud) GetZoneByNodeName(ctx context.Context, nodeName types.NodeName) (cloudprovider.Zone, error) {
+	return cloudprovider.Zone{
+		FailureDomain: c.Zone,
+		Region:        c.Region,
+	}, nil
+}
+
+// NodeAddresses implements cloudprovider.Instances interface
 // It returns the addresses of the specified instance.
-func (c *Cloud) NodeAddresses(nodeName types.NodeName) ([]v1.NodeAddress, error) {
+func (c *Cloud) NodeAddresses(ctx context.Context, nodeName types.NodeName) ([]v1.NodeAddress, error) {
 	addrs := []v1.NodeAddress{
 		v1.NodeAddress{
 			Type:    v1.NodeHostName,
 			Address: string(nodeName),
 		},
 	}
-	uhostID, err := c.InstanceID(nodeName)
+	uhostID, err := c.InstanceID(ctx, nodeName)
 	if err != nil {
 		glog.Errorf("failed to get instance id for %s: %v", nodeName, err)
 		return addrs, nil
@@ -142,7 +163,7 @@ func (c *Cloud) NodeAddresses(nodeName types.NodeName) ([]v1.NodeAddress, error)
 
 // ExternalID implements cloudprovider.Instances interface
 // It returns the cloud provider ID of the node with specified NodeName.
-func (c *Cloud) ExternalID(nodeName types.NodeName) (string, error) {
+func (c *Cloud) ExternalID(ctx context.Context, nodeName types.NodeName) (string, error) {
 	ip := strings.Replace(string(nodeName), "-", ".", -1)
 	ids, err := c.getUHostIDs([]string{ip})
 	if err != nil {
@@ -157,7 +178,7 @@ func (c *Cloud) ExternalID(nodeName types.NodeName) (string, error) {
 
 // InstanceID implements cloudprovider.Instances interface
 // It returns the cloud provider ID of the node with the specified NodeName.
-func (c *Cloud) InstanceID(nodeName types.NodeName) (string, error) {
+func (c *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (string, error) {
 	ip := strings.Replace(string(nodeName), "-", ".", -1)
 	ids, err := c.getUHostIDs([]string{ip})
 	if err != nil {
@@ -172,7 +193,7 @@ func (c *Cloud) InstanceID(nodeName types.NodeName) (string, error) {
 
 // InstanceType implements cloudprovider.Instances interface
 // It returns the type of the specified instance.
-func (c *Cloud) InstanceType(nodeName types.NodeName) (string, error) {
+func (c *Cloud) InstanceType(ctx context.Context, nodeName types.NodeName) (string, error) {
 	// find instance in UHost
 	p1 := DescribeUHostInstanceParam{
 		Region:    c.Region,
@@ -223,24 +244,29 @@ func (c *Cloud) InstanceType(nodeName types.NodeName) (string, error) {
 	return "", cloudprovider.InstanceNotFound
 }
 
-func (c *Cloud) InstanceTypeByProviderID(providerID string) (string, error) {
+func (c *Cloud) InstanceTypeByProviderID(ctx context.Context, providerID string) (string, error) {
 	return "", nil
 }
 
-func (c *Cloud) NodeAddressesByProviderID(providerID string) ([]v1.NodeAddress, error) {
+func (c *Cloud) NodeAddressesByProviderID(ctx context.Context, providerID string) ([]v1.NodeAddress, error) {
 	return nil, nil
 }
 
 // AddSSHKeyToAllInstances implements cloudprovider.Instances interface
 // It adds an SSH public key as a legal identity for all instances.
-func (c *Cloud) AddSSHKeyToAllInstances(user string, keyData []byte) error {
+func (c *Cloud) AddSSHKeyToAllInstances(ctx context.Context, user string, keyData []byte) error {
 	return errors.New("unimplemented")
 }
 
 // CurrentNodeName implement cloudprovider.Instances interface
 // It returns the name of the node we are currently running on.
-func (c *Cloud) CurrentNodeName(hostname string) (types.NodeName, error) {
+func (c *Cloud) CurrentNodeName(ctx context.Context, hostname string) (types.NodeName, error) {
 	return types.NodeName(hostname), nil
+}
+
+// InstanceExistsByProviderID implement cloudprovider.Instances interface
+func (c *Cloud) InstanceExistsByProviderID(ctx context.Context, providerID string) (bool, error) {
+	return false, nil
 }
 
 // UCloud API doesn't support get ULB by name
@@ -363,7 +389,7 @@ func (c *Cloud) deleteLoadBalancer(name string) error {
 
 // GetLoadBalancer implements cloudprovider.LoadBanacer interface
 // It returns whether the specified load balancer exists, and if so what its status is.
-func (c *Cloud) GetLoadBalancer(clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
+func (c *Cloud) GetLoadBalancer(ctx context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("get loadbalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
@@ -391,7 +417,7 @@ func toLBStatus(ulbSet *ULBSet) (*v1.LoadBalancerStatus, error) {
 
 // EnsureLoadBalancer implements cloudprovider.LoadBalancer interface
 // It creates a new load balancer or updates the existing one.
-func (c *Cloud) EnsureLoadBalancer(clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
+func (c *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("loadBalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
@@ -516,7 +542,7 @@ func (c *Cloud) getUHostIDs(nodeIPs []string) ([]string, error) {
 
 // UpdateLoadBalancer implements cloudprovider.LoadBalancer interface
 // It updates hosts under the specified load balancer.
-func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, nodes []*v1.Node) error {
+func (c *Cloud) UpdateLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) error {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("update loadbalancer name: %s", loadBalancerName)
 	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
@@ -601,7 +627,7 @@ func (c *Cloud) UpdateLoadBalancer(clusterName string, service *v1.Service, node
 // EnsureLoadBalancerDeleted implements cloudprovider.LoadBalancer interface
 // It deletes the specified load balancer if it exists,
 // returning nil if the load balancer either not exists or was successfully deleted.
-func (c *Cloud) EnsureLoadBalancerDeleted(clusterName string, service *v1.Service) error {
+func (c *Cloud) EnsureLoadBalancerDeleted(ctx context.Context, clusterName string, service *v1.Service) error {
 	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	glog.V(3).Infof("loadbalancer name: %s", loadBalancerName)
 	if err := c.deleteLoadBalancer(loadBalancerName); err != nil {
