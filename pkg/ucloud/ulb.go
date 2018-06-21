@@ -25,10 +25,6 @@ const (
 	sshPort int64 = 22
 )
 
-var (
-	sshConfig *ssh.ClientConfig
-)
-
 type Parameter interface {
 	QueryString() string
 }
@@ -312,7 +308,7 @@ type ULBVServerSet struct {
 	ClientTimeout   int             `json:"ClientTimeout"`
 	Status          int             `json:"Status"`
 	SSLSet          []ULBSSLSet     `json:"SSLSet"`
-	VServerSet      []ULBBackendSet `json:"VServerSet"`
+	VServerSet      []ULBBackendSet `json:"BackendSet"`
 }
 
 type ULBSSLSet struct {
@@ -781,17 +777,19 @@ func (c UClient) DeleteULB(p DeleteULBParam) (*DeleteULBResponse, error) {
 	return r, err
 }
 
-func (c UClient) DeleteInternalULB(p DeleteULBParam, hostIPs []string, ulbIP string) (*DeleteULBResponse, error) {
+func (c UClient) DeleteInternalULB(p DeleteULBParam, hostIPs []string, ulbIP string, sshConfig *ssh.ClientConfig) (*DeleteULBResponse, error) {
 	p.setKey(c.PublicKey, c.PrivateKey)
 	resp, err := http.Get(c.GetQueryURL(p))
 	glog.V(3).Infof("DeleteULB request url: %s", c.GetQueryURL(p))
 	if err != nil {
+		glog.Errorf("failed to delete ulb: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	r := &DeleteULBResponse{}
 	err = json.NewDecoder(resp.Body).Decode(r)
 	if err != nil {
+		glog.Errorf("failed to get response: %v", err)
 		return nil, err
 	}
 	for _, hostIP := range hostIPs {

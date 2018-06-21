@@ -375,7 +375,7 @@ func (c *Cloud) deleteLoadBalancer(name string) error {
 		ProjectID: c.ProjectID,
 		ULBID:     ulbSet.ULBID,
 	}
-	r, err := c.UClient.DeleteInternalULB(p, hostIPs, ulbIP)
+	r, err := c.UClient.DeleteInternalULB(p, hostIPs, ulbIP, c.SSHConfig)
 	if err != nil {
 		glog.Errorf("failed to delete internal ULB: %v", err)
 		return err
@@ -418,20 +418,22 @@ func toLBStatus(ulbSet *ULBSet) (*v1.LoadBalancerStatus, error) {
 // EnsureLoadBalancer implements cloudprovider.LoadBalancer interface
 // It creates a new load balancer or updates the existing one.
 func (c *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, service *v1.Service, nodes []*v1.Node) (*v1.LoadBalancerStatus, error) {
-	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
-	glog.V(3).Infof("loadBalancer name: %s", loadBalancerName)
-	ulbSet, err := c.describeLoadBalancer(loadBalancerName)
-	if err != nil && err != ULBNotFound {
-		glog.Errorf("failed to describe loadbalancer %s: %v", loadBalancerName, err)
+	lbStatus, exists, err := c.GetLoadBalancer(ctx, clusterName, service)
+	if err != nil {
+		glog.Errorf("failed to get LoadBalancer for %s/%s: %v", service.Namespace, service.Name, err)
 		return nil, err
 	}
-	if err == nil {
-		status, err := toLBStatus(ulbSet)
+	if exists {
+		err = c.UpdateLoadBalancer(ctx, clusterName, service, nodes)
+		if err != nil {
+			return nil, err
+		}
+		lbStatus, exists, err = c.GetLoadBalancer(ctx, clusterName, service)
 		if err != nil {
 			glog.Errorf("failed to get load balancer status: %v", err)
 			return nil, err
 		}
-		return status, nil
+		return lbStatus, nil
 	}
 
 	// ULB not found, create one
@@ -453,6 +455,7 @@ func (c *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, serv
 		glog.Errorf("failed to get UHost IDs from node IPs %v: %v", nodeIPs, err)
 		return nil, err
 	}
+	loadBalancerName := cloudprovider.GetLoadBalancerName(service)
 	ulbID, err := c.createLoadBalancer(loadBalancerName, uHostIDs, backendPort)
 	if err != nil {
 		glog.Errorf("failed to create loadbalancer(%s) for UHost(%v): %v", loadBalancerName, uHostIDs, err)
