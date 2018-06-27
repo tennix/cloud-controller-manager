@@ -10,12 +10,10 @@ import (
 	"k8s.io/kubernetes/cmd/cloud-controller-manager/app"
 	"k8s.io/kubernetes/cmd/cloud-controller-manager/app/options"
 	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
-	"k8s.io/kubernetes/pkg/cloudprovider"
-	_ "k8s.io/kubernetes/pkg/cloudprovider/providers"
-	_ "k8s.io/kubernetes/pkg/version/prometheus" // for version metric registration
+	_ "k8s.io/kubernetes/pkg/version/prometheus"        // for version metric registration
 	"k8s.io/kubernetes/pkg/version/verflag"
 
-	_ "github.com/pingcap/cloud-controller-manager/pkg/ucloud"
+	_ "github.com/tennix/cloud-controller-manager/pkg/ucloud"
 
 	"github.com/golang/glog"
 	"github.com/spf13/pflag"
@@ -26,7 +24,7 @@ func init() {
 }
 
 func main() {
-	s := options.NewCloudControllerManagerServer()
+	s := options.NewCloudControllerManagerOptions()
 	s.AddFlags(pflag.CommandLine)
 
 	flag.InitFlags()
@@ -35,12 +33,13 @@ func main() {
 
 	verflag.PrintAndExitIfRequested()
 
-	cloud, err := cloudprovider.InitCloudProvider("ucloud", s.CloudConfigFile)
+	s.Generic.ComponentConfig.AllowUntaggedCloud = true
+	config, err := s.Config()
 	if err != nil {
-		glog.Fatalf("Cloud provider could not be initialized: %v", err)
+		glog.Fatalf("failed to create component config: %v", err)
 	}
 
-	if err := app.Run(s, cloud); err != nil {
+	if err := app.Run(config.Complete()); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
